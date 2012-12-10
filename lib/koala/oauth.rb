@@ -31,9 +31,9 @@ module Koala
       #                     You can pass Rack/Rails/Sinatra's cookie hash directly to this method.
       #
       # @return the authenticated user's information as a hash, or nil.
-      def get_user_info_from_cookies(cookie_hash)
+      def get_user_info_from_cookies(cookie_hash, fb_token)
         if signed_cookie = cookie_hash["fbsr_#{@app_id}"]
-          parse_signed_cookie(signed_cookie)
+          parse_signed_cookie(signed_cookie, fb_token)
         elsif unsigned_cookie = cookie_hash["fbs_#{@app_id}"]
           parse_unsigned_cookie(unsigned_cookie)
         end
@@ -47,12 +47,12 @@ module Koala
       # @param (see #get_user_info_from_cookie)
       #
       # @return the authenticated user's Facebook ID, or nil.
-      def get_user_from_cookies(cookies)
+      def get_user_from_cookies(cookies, fb_token)
         if signed_cookie = cookies["fbsr_#{@app_id}"]
           if components = parse_signed_request(signed_cookie)
             components["user_id"]
           end
-        elsif info = get_user_info_from_cookies(cookies)
+        elsif info = get_user_info_from_cookies(cookies, fb_token)
           # Parsing unsigned cookie
           info["uid"]
         end
@@ -305,11 +305,11 @@ module Koala
         sig == components["sig"] && (components["expires"] == "0" || Time.now.to_i < components["expires"].to_i) ? components : nil
       end
 
-      def parse_signed_cookie(fb_cookie)
+      def parse_signed_cookie(fb_cookie, fb_token)
         components = parse_signed_request(fb_cookie)
         if code = components["code"]
           begin
-            token_info = get_access_token_info(code, :redirect_uri => '')
+            token_info = fb_token.nil? ? get_access_token_info(code, :redirect_uri => '') : fb_token
           rescue Koala::Facebook::OAuthTokenRequestError => err
             if err.fb_error_type == 'OAuthException' && err.fb_error_message =~ /Code was invalid or expired/
               return nil

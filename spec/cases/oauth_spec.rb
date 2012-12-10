@@ -65,13 +65,13 @@ describe "Koala::Facebook::OAuth" do
           @oauth.stub(:get_access_token_info).and_return("access_token" => @token)
         end
 
-        it "parses valid cookies" do
-          result = @oauth.get_user_info_from_cookies(@cookie)
+        it "parses valid cookies", :focus => true do
+          result = @oauth.get_user_info_from_cookies(@cookie, @fb_token)
           result.should be_a(Hash)
         end
 
         it "returns all the components in the signed request" do
-          result = @oauth.get_user_info_from_cookies(@cookie)
+          result = @oauth.get_user_info_from_cookies(@cookie, @fb_token)
           @oauth.parse_signed_request(@cookie.values.first).each_pair do |k, v|
             result[k].should == v
           end
@@ -81,87 +81,88 @@ describe "Koala::Facebook::OAuth" do
           code = "foo"
           @oauth.stub(:parse_signed_request).and_return({"code" => code})
           @oauth.should_receive(:get_access_token_info).with(code, anything)
-          @oauth.get_user_info_from_cookies(@cookie)
+          @oauth.get_user_info_from_cookies(@cookie, @fb_token)
         end
 
         it "sets the code redemption redirect_uri to ''" do
           @oauth.should_receive(:get_access_token_info).with(anything, :redirect_uri => '')
-          @oauth.get_user_info_from_cookies(@cookie)
+          @oauth.get_user_info_from_cookies(@cookie, @fb_token)
         end
 
         context "if the code is missing" do
           it "doesn't make a request to Facebook" do
             @oauth.stub(:parse_signed_request).and_return({})
             @oauth.should_receive(:get_access_token_info).never
-            @oauth.get_user_info_from_cookies(@cookie)
+            @oauth.get_user_info_from_cookies(@cookie, @fb_token)
           end
 
           it "returns nil" do
             @oauth.stub(:parse_signed_request).and_return({})
-            @oauth.get_user_info_from_cookies(@cookie).should be_nil
+            @oauth.get_user_info_from_cookies(@cookie, @fb_token).should be_nil
           end
 
           it "logs a warning" do
             @oauth.stub(:parse_signed_request).and_return({})
             Koala::Utils.logger.should_receive(:warn)
-            @oauth.get_user_info_from_cookies(@cookie)
+            @oauth.get_user_info_from_cookies(@cookie, @fb_token)
           end
         end
 
         context "if the code is present" do
           it "adds the access_token into the hash" do
-            @oauth.get_user_info_from_cookies(@cookie)["access_token"].should == @token
+            @oauth.get_user_info_from_cookies(@cookie, @fb_token)["access_token"].should == @token
           end
 
           it "returns nil if the call to FB returns no data" do
             @oauth.stub(:get_access_token_info).and_return(nil)
-            @oauth.get_user_info_from_cookies(@cookie).should be_nil
+            @oauth.get_user_info_from_cookies(@cookie, @fb_token).should be_nil
           end
 
           it "returns nil if the call to FB returns an expired code error" do
             @oauth.stub(:get_access_token_info).and_raise(Koala::Facebook::OAuthTokenRequestError.new(400,
               '{ "error": { "type": "OAuthException", "message": "Code was invalid or expired. Session has expired at unix time 1324044000. The current unix time is 1324300957." } }'
             ))
-            @oauth.get_user_info_from_cookies(@cookie).should be_nil
+            @oauth.get_user_info_from_cookies(@cookie, @fb_token).should be_nil
           end
 
           it "raises the error if the call to FB returns a different error" do
             @oauth.stub(:get_access_token_info).and_raise(Koala::Facebook::OAuthTokenRequestError.new(400,
               '{ "error": { "type": "OtherError", "message": "A Facebook Error" } }'))
-            expect { @oauth.get_user_info_from_cookies(@cookie) }.to raise_exception(Koala::Facebook::OAuthTokenRequestError)
+            expect { @oauth.get_user_info_from_cookies(@cookie, @fb_token) }.to raise_exception(Koala::Facebook::OAuthTokenRequestError)
           end
         end
 
         it "doesn't parse invalid cookies" do
           # make an invalid string by replacing some values
           bad_cookie_hash = @cookie.inject({}) { |hash, value| hash[value[0]] = value[1].gsub(/[0-9]/, "3") }
-          result = @oauth.get_user_info_from_cookies(bad_cookie_hash)
+          token = ""
+          result = @oauth.get_user_info_from_cookies(bad_cookie_hash, token)
           result.should be_nil
         end
       end
 
       context "for unsigned cookies" do
         it "properly parses valid cookies" do
-          result = @oauth.get_user_info_from_cookies(KoalaTest.oauth_test_data["valid_cookies"])
+          result = @oauth.get_user_info_from_cookies(KoalaTest.oauth_test_data["valid_cookies"], {})
           result.should be_a(Hash)
         end
 
         it "returns all the cookie components from valid cookie string" do
           cookie_data = KoalaTest.oauth_test_data["valid_cookies"]
           puts cookie_data.inspect
-          parsing_results = @oauth.get_user_info_from_cookies(cookie_data)
+          parsing_results = @oauth.get_user_info_from_cookies(cookie_data, {})
           number_of_components = cookie_data["fbs_#{@app_id.to_s}"].scan(/\=/).length
           parsing_results.length.should == number_of_components
         end
 
         it "properly parses valid offline access cookies (e.g. no expiration)" do
-          result = @oauth.get_user_info_from_cookies(KoalaTest.oauth_test_data["offline_access_cookies"])
+          result = @oauth.get_user_info_from_cookies(KoalaTest.oauth_test_data["offline_access_cookies"], {})
           result["uid"].should
         end
 
         it "returns all the cookie components from offline access cookies" do
           cookie_data = KoalaTest.oauth_test_data["offline_access_cookies"]
-          parsing_results = @oauth.get_user_info_from_cookies(cookie_data)
+          parsing_results = @oauth.get_user_info_from_cookies(cookie_data, {})
           number_of_components = cookie_data["fbs_#{@app_id.to_s}"].scan(/\=/).length
           parsing_results.length.should == number_of_components
         end
@@ -169,13 +170,13 @@ describe "Koala::Facebook::OAuth" do
         it "doesn't parse expired cookies" do
           new_time = @time.to_i * 2
           @time.stub(:to_i).and_return(new_time)
-          @oauth.get_user_info_from_cookies(KoalaTest.oauth_test_data["valid_cookies"]).should be_nil
+          @oauth.get_user_info_from_cookies(KoalaTest.oauth_test_data["valid_cookies"], {}).should be_nil
         end
 
         it "doesn't parse invalid cookies" do
           # make an invalid string by replacing some values
           bad_cookie_hash = KoalaTest.oauth_test_data["valid_cookies"].inject({}) { |hash, value| hash[value[0]] = value[1].gsub(/[0-9]/, "3") }
-          result = @oauth.get_user_info_from_cookies(bad_cookie_hash)
+          result = @oauth.get_user_info_from_cookies(bad_cookie_hash, {})
           result.should be_nil
         end
       end
@@ -191,18 +192,18 @@ describe "Koala::Facebook::OAuth" do
 
         it "does not uses get_user_info_from_cookies to parse the cookies" do
           @oauth.should_not_receive(:get_user_info_from_cookies).with(@cookie).and_return({})
-          @oauth.get_user_from_cookies(@cookie)
+          @oauth.get_user_from_cookies(@cookie, {})
         end
 
         it "uses return the facebook user id string if the cookies are valid" do
-          result = @oauth.get_user_from_cookies(@cookie)
+          result = @oauth.get_user_from_cookies(@cookie, {})
           result.should == "2905623" # the user who generated the original test cookie
         end
 
         it "returns nil if the cookies are invalid" do
           # make an invalid string by replacing some values
           bad_cookie_hash = @cookie.inject({}) { |hash, value| hash[value[0]] = value[1].gsub(/[0-9]/, "3") }
-          result = @oauth.get_user_from_cookies(bad_cookie_hash)
+          result = @oauth.get_user_from_cookies(bad_cookie_hash, {})
           result.should be_nil
         end
       end
@@ -214,19 +215,19 @@ describe "Koala::Facebook::OAuth" do
         end
 
         it "uses get_user_info_from_cookies to parse the cookies" do
-          @oauth.should_receive(:get_user_info_from_cookies).with(@cookie).and_return({})
-          @oauth.get_user_from_cookies(@cookie)
+          @oauth.should_receive(:get_user_info_from_cookies).with(@cookie, {}).and_return({})
+          @oauth.get_user_from_cookies(@cookie, {})
         end
 
         it "uses return a string if the cookies are valid" do
-          result = @oauth.get_user_from_cookies(@cookie)
+          result = @oauth.get_user_from_cookies(@cookie, {})
           result.should == "2905623" # the user who generated the original test cookie
         end
 
         it "returns nil if the cookies are invalid" do
           # make an invalid string by replacing some values
           bad_cookie_hash = @cookie.inject({}) { |hash, value| hash[value[0]] = value[1].gsub(/[0-9]/, "3") }
-          result = @oauth.get_user_from_cookies(bad_cookie_hash)
+          result = @oauth.get_user_from_cookies(bad_cookie_hash, {})
           result.should be_nil
         end
       end
